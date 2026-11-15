@@ -111,6 +111,21 @@ dotnet run --project src/ElectricityDash.Web
 
 `.github/workflows/ci.yml` runs build and tests on every push to `main` and every PR. It starts a Postgres service container and passes it to the tests through `TEST_POSTGRES_CONNECTION`. After pushing to `main`, check that the run is green (`gh run list` / `gh run watch`).
 
+## Gotchas
+
+Things that already cost time. Check here before debugging.
+
+- **Eloverblik details are partly unverified.** The endpoint list above came from a summarized fetch of the swagger spec. Request/response body shapes, timestamp and DST representation, and rate limits have not been confirmed. Read the real swagger/docs and make one real call (user-supplied token via user-secrets) before relying on them.
+- **xunit is v2.** No `TestContext.Current` (v3 only), so `IAsyncLifetime` returns `Task` and there are no cancellation tokens from the test context.
+- **Dapper reads `timestamptz` as `DateTime`** (UTC kind), not `DateTimeOffset`. Records that map rows need `DateTime` properties. Writing `DateTimeOffset` parameters works.
+- **Energi Data Service timestamps have no offset** (`"2025-10-01T00:00:00"` with `timezone=utc`). Parse as `DateTime` and mark UTC explicitly, never let them default to local time.
+- **Rate limiting is per call, not per size.** Prefer one call for a large range over many small ones. Failed calls with retries burn the quota. The Eloverblik client will probably need the same `Retry-After` handling.
+- **Use `127.0.0.1`, not `localhost`, in DB clients.** Docker runs on Colima here, whose port forward listens on IPv4 only, so clients resolving `localhost` to `::1` get "connection refused". Npgsql falls back to IPv4 and is unaffected.
+- **Test host config:** override settings with `builder.UseSetting(...)` in `ApiFactory`. `Program.cs` reads configuration before the host is built, so `ConfigureAppConfiguration` overrides are too late.
+- **Shell tool:** a standalone foreground `sleep` is blocked. Use `run_in_background` for waits. Avoid `&&`/`;` chains (see global instructions).
+- **The user also pushes to `main` directly** (e.g. README tweaks made outside the session). Run `git pull --ff-only` before committing and pushing.
+- **Spot prices only exist from 2025-10-01** (`DayAheadPrices`). Consumption older than that has no price until the `Elspotprices` backfill is built.
+
 ## Git workflow
 
 - **Identity:** all commits use the personal GitHub account: `user.name = driis`, `user.email = dr@driis.dk`, set in the repo-local git config. Verify with `git config user.email` before committing. Never use the work identity.
