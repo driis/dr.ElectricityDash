@@ -26,17 +26,21 @@ ElectricityDash is a personal hobby project (single user, one meter, Denmark). E
 - **Supplier:** Aura (spot price plus margin). **Grid company:** Dinel (tariffs from Eloverblik `getcharges`).
 - **Billing resolution: hourly.** Aura's own pages say flex products follow the Nordic spot price "time for time", with no mention of 15-minute settlement. The market moved to 15-minute prices on 2025-10-01, but billing here is hourly. Store and bill per hour. If the spot source is 15-minute, average the four quarters into the hour. **Still to confirm against an actual Aura invoice.**
 - **Subscription fee: NOT YET MODELLED.** The user will add it later. Until then the monthly bill and forecast exclude it. Make this visible in the UI/API output, never silently present a total as complete.
-- **Score:** share of kWh consumed in off-peak hours, meaning the cheapest hours of the day. Shown for day, week and month. Exact definition of "cheapest hours" (e.g. cheapest N hours per day, or below a price threshold) is still open.
+- **Score:** share of kWh consumed in off-peak hours, meaning the cheapest hours of the day. Shown for day, week and month. **Off-peak = the 6 cheapest hours of each 24-hour day.** "Day" is the Danish calendar day (`Europe/Copenhagen`), so on DST-change days it has 23 or 25 hours, and the rule is still the 6 cheapest hours of that day. Ties are broken by earlier hour. Score = kWh used in those hours / total kWh used.
 - **One meter.** No multi-tenant or multi-meter design needed, but do not hardcode the meter ID. It comes from configuration or from Eloverblik.
 - **Auth:** none for now, local use only. Add auth before any public deployment (see Open decisions).
 
 ## Architecture
 
-- **Backend + frontend:** one C# / .NET 10 project, `src/ElectricityDash.Web`. Frontend is **Blazor** (Web App, interactive server). The dashboard is mainly graphs and status.
+- **Backend + frontend:** one C# / .NET 11 project, `src/ElectricityDash.Web`. Frontend is **Blazor** (Web App, interactive server). The dashboard is mainly graphs and status.
 - **Database:** PostgreSQL 17, run in Docker (`docker-compose.yml`).
 - **Data access:** **Dapper** over Npgsql (`NpgsqlDataSource` from DI). Raw SQL, no ORM.
 - **Schema management:** DbUp. Embedded SQL scripts in `src/ElectricityDash.Web/Database/Scripts/` (`NNNN_description.sql`), applied at startup by `DatabaseMigrator`. Scripts are append-only. Never edit an applied script, add a new one.
-- **Ingestion:** a **scheduled job hitting an endpoint** (e.g. Cloud Scheduler calling the app). Build it as an idempotent backfill (upsert by hour), safe to call repeatedly. Eloverblik data arrives a day or more late.
+- **Ingestion:** a **scheduled job hitting an endpoint** (e.g. Cloud Scheduler calling the app). Each source is an idempotent backfill (upsert by hour), safe to call repeatedly with overlapping ranges. Eloverblik data arrives a day or more late.
+  - **Spot prices: done.** `POST /api/ingest/spot-prices?from=YYYY-MM-DD&to=YYYY-MM-DD` (Danish dates, inclusive; defaults to today and tomorrow, max 366 days). Code in `SpotPrices/`: typed `EnergyDataServiceClient` (resilience handler for retry/timeout), `HourlyAggregation` (15-minute to hourly average), `SpotPriceRepository` (Dapper upsert), `SpotPriceIngestor`. Upstream failures return 502 and store nothing. Verified against the live API. Tomorrow's prices are published around 13:00 CET.
+  - **Only `DayAheadPrices` (from 2025-10-01) is supported.** Earlier history needs the hourly `Elspotprices` dataset, not built yet. Needed before backfilling consumption older than that.
+  - **Consumption (Eloverblik): not built yet.**
+  - The ingest endpoint has no authentication yet. Fine for local use, must be fixed before exposing it.
 - **Deployment:** undecided, likely a price-aware serverless cloud (e.g. Cloud Run). Keep the app stateless, containerizable, configured by environment variables, fast to start. No in-process background schedulers.
 - **Local dev:** dependencies run in Docker, the app runs on the host (`dotnet run` / IDE) so debugging is easy. The app is not containerized for local use.
 
@@ -65,7 +69,7 @@ docker-compose.yml              local dependencies (Postgres)
 
 **Prior art:** `../teslamate-cost` (github.com/driis/teslamate-cost, checked out locally) has `Source/dr.TeslamateCost/EnergyDataServiceClient.cs`, `SpotPriceWithOffset.cs` and `TaxesAndFees.cs`. Do not copy as is. Review and fix while porting. Issues already spotted:
 - `priceArea` argument is ignored. The filter is hardcoded to `DK1`.
-- Uses the `Elspotprices` dataset (hourly). Check whether it is still served. Energi Data Service moved day-ahead prices to 15-minute resolution (`DayAheadPrices`), so handle sub-hourly source data (see billing decision above).
+- Uses the `Elspotprices` dataset (hourly). Energi Data Service now publishes 15-minute `DayAheadPrices` from 2025-10-01 (handled, see Ingestion). Elspotprices holds the older data.
 - Tariff cut-offs use a fixed `-2h` offset and `when.Hour` is read in whatever offset the value carries. Do all time-of-day logic in `Europe/Copenhagen` (DST aware), and store timestamps in UTC.
 - Retry is recursive and only handles 429. Use `IHttpClientFactory` (typed client) with `Microsoft.Extensions.Http.Resilience` instead of `new HttpClient()` per instance.
 - `ApplicationException` is used for errors, and `SpotPriceDKK` can be null. Use specific exceptions and handle missing prices explicitly.
@@ -74,7 +78,7 @@ docker-compose.yml              local dependencies (Postgres)
 
 ## Code standards
 
-- Target `net10.0`, latest C# language version (set in `Directory.Build.props`, along with nullable and warnings-as-errors). Use modern features where they fit: records, primary constructors, collection expressions, `required` members, pattern matching, `TimeProvider` (never `DateTime.Now`/`UtcNow` directly), `DateOnly`/`TimeOnly` where semantically right.
+- Target `net11.0` (always the latest .NET, set in `Directory.Build.props`, so project files must not set their own `TargetFramework`), latest C# language version (set in `Directory.Build.props`, along with nullable and warnings-as-errors). Use modern features where they fit: records, primary constructors, collection expressions, `required` members, pattern matching, `TimeProvider` (never `DateTime.Now`/`UtcNow` directly), `DateOnly`/`TimeOnly` where semantically right.
 - Prefer immutable records for DTOs and domain values.
 - Money and prices are `decimal`. State the unit in the name (`DkkPerKwh`, `Kwh`). Store UTC, present in `Europe/Copenhagen`.
 - Prefer minimal APIs and small focused types over layered ceremony. Hobby project, keep it simple.
@@ -89,7 +93,8 @@ A comprehensive test suite is a requirement.
 - **Add unit tests where they add value:** pricing and tariff calculation, score calculation, forecast, DST edge cases (23h and 25h days), period splitting. Do not unit test plumbing.
 - Deterministic tests: inject `TimeProvider`, no sleeping.
 - xunit is v2 (`2.9.3`). Do not use v3-only APIs such as `TestContext.Current`.
-- Test projects reference `Microsoft.AspNetCore.Mvc.Testing` **10.0.x**. The unpinned latest is 11.x and does not support net10.0.
+- `Microsoft.AspNetCore.Mvc.Testing` must match the target framework major version (currently 11.x).
+- External HTTP APIs are faked in `ApiFactory` through `FakeEnergyDataService` (an `HttpMessageHandler` plugged in as the typed client's primary handler), so the real client, resilience pipeline and JSON parsing run. `FixedTimeProvider` replaces `TimeProvider`. Add a similar fake for Eloverblik.
 
 ## Commands
 
@@ -109,7 +114,7 @@ dotnet run --project src/ElectricityDash.Web
 ## Git workflow
 
 - **Identity:** all commits use the personal GitHub account: `user.name = driis`, `user.email = dr@driis.dk`, set in the repo-local git config. Verify with `git config user.email` before committing. Never use the work identity.
-- **Remote:** `origin` is `git@github-public:driis/dr.ElecricityDash.git`. The `github-public` SSH alias (in `~/.ssh/config`) selects the personal key. Plain `git@github.com` uses the work key and authenticates as the wrong account. Note the repo name spelling `ElecricityDash` (sic), as created on GitHub.
+- **Remote:** `origin` is `git@github-public:driis/dr.ElectricityDash.git`. The `github-public` SSH alias (in `~/.ssh/config`) selects the personal key. Plain `git@github.com` uses the work key and authenticates as the wrong account. The `gh` CLI also has separate work and personal accounts. Reading CI runs works with either (public repo), but changes to the repo itself (rename, settings) need `gh auth switch --user driis`, and you must switch back afterwards.
 - **Push straight to `main`.** Hobby project, do not open a PR unless explicitly asked.
 - Do not add attribution (`Co-Authored-By`, "Generated with Claude Code", etc.) to commits or PRs. This follows the user's global instructions.
 - Small, coherent commits with clear messages.
@@ -118,7 +123,6 @@ dotnet run --project src/ElectricityDash.Web
 
 Ask the user before locking these in:
 
-- Exact definition of the "cheapest hours" for the off-peak score.
 - Confirm hourly billing with an actual Aura invoice, and the subscription fee amount (to be added later).
 - Authentication for the dashboard if it is ever published.
 - Deployment target and how the scheduled ingestion job is triggered and secured.

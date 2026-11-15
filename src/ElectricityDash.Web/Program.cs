@@ -1,6 +1,7 @@
 using Dapper;
 using ElectricityDash.Web.Components;
 using ElectricityDash.Web.Database;
+using ElectricityDash.Web.SpotPrices;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -8,7 +9,16 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("ElectricityDash")
     ?? throw new InvalidOperationException("Connection string 'ElectricityDash' is not configured.");
 
+var energyDataService = builder.Configuration.GetSection("EnergyDataService").Get<EnergyDataServiceOptions>()
+    ?? new EnergyDataServiceOptions();
+
 builder.Services.AddNpgsqlDataSource(connectionString);
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.Configure<EnergyDataServiceOptions>(builder.Configuration.GetSection("EnergyDataService"));
+builder.Services.AddHttpClient<EnergyDataServiceClient>(client => client.BaseAddress = energyDataService.Endpoint)
+    .AddStandardResilienceHandler(o => o.Retry.Delay = energyDataService.RetryDelay);
+builder.Services.AddScoped<SpotPriceRepository>();
+builder.Services.AddScoped<SpotPriceIngestor>();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
@@ -39,6 +49,8 @@ app.MapGet("/api/health", async (NpgsqlDataSource db, CancellationToken ct) =>
         new CommandDefinition("SELECT count(*) FROM schemaversions", cancellationToken: ct));
     return new HealthResponse("ok", appliedMigrations);
 });
+
+app.MapIngestEndpoints();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
