@@ -11,6 +11,17 @@ public sealed record EnergyDataServiceOptions
 
     /// <summary>Base delay between retries. Tests lower this to keep failure scenarios fast.</summary>
     public TimeSpan RetryDelay { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Retries after a 429 / 5xx. When the server sends Retry-After it is honoured instead of <see cref="RetryDelay"/>.
+    /// </summary>
+    public int MaxRetries { get; init; } = 4;
+
+    /// <summary>
+    /// Upper bound for one call including all retries and waits. Must exceed the server's Retry-After
+    /// (seen up to 60s when rate limited), otherwise the wait is cut short and the call fails.
+    /// </summary>
+    public TimeSpan TotalTimeout { get; init; } = TimeSpan.FromMinutes(3);
 }
 
 /// <summary>A day-ahead price for one delivery period (15 minutes from 2025-10-01, hourly before).</summary>

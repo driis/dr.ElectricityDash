@@ -16,7 +16,13 @@ builder.Services.AddNpgsqlDataSource(connectionString);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<EnergyDataServiceOptions>(builder.Configuration.GetSection("EnergyDataService"));
 builder.Services.AddHttpClient<EnergyDataServiceClient>(client => client.BaseAddress = energyDataService.Endpoint)
-    .AddStandardResilienceHandler(o => o.Retry.Delay = energyDataService.RetryDelay);
+    .AddStandardResilienceHandler(o =>
+    {
+        o.Retry.Delay = energyDataService.RetryDelay;
+        o.Retry.MaxRetryAttempts = energyDataService.MaxRetries;
+        o.Retry.ShouldRetryAfterHeader = true; // Energi Data Service rate limits with 429 + Retry-After
+        o.TotalRequestTimeout.Timeout = energyDataService.TotalTimeout;
+    });
 builder.Services.AddScoped<SpotPriceRepository>();
 builder.Services.AddScoped<SpotPriceIngestor>();
 builder.Services.AddRazorComponents()

@@ -113,6 +113,34 @@ public class IngestSpotPricesTests(ApiFactory factory) : IClassFixture<ApiFactor
     }
 
     [Fact]
+    public async Task Rate_limited_calls_wait_for_retry_after_and_then_succeed()
+    {
+        var calls = 0;
+        factory.EnergyDataService.Responder = _ =>
+        {
+            if (++calls > 1)
+            {
+                return FakeEnergyDataService.Json(
+                    FakeEnergyDataService.Quarters(new DateTime(2025, 9, 30, 22, 0, 0), "DK1", 100, 100, 100, 100));
+            }
+
+            var limited = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            limited.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(1));
+            return limited;
+        };
+
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var response = await _client.PostAsync("/api/ingest/spot-prices?from=2025-10-01&to=2025-10-01", null);
+        started.Stop();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, factory.EnergyDataService.Requests.Count);
+        // The test factory configures a 1 ms retry delay, so waiting about a second proves Retry-After was honoured.
+        Assert.True(started.Elapsed >= TimeSpan.FromMilliseconds(900), $"Only waited {started.Elapsed}");
+        Assert.Single(await StoredPrices());
+    }
+
+    [Fact]
     public async Task A_missing_price_fails_the_whole_ingest_rather_than_leaving_a_gap()
     {
         factory.EnergyDataService.Responder = _ => FakeEnergyDataService.Json(
