@@ -1,5 +1,7 @@
 # ElectricityDash
 
+[![CI](https://github.com/driis/dr.ElectricityDash/actions/workflows/ci.yml/badge.svg)](https://github.com/driis/dr.ElectricityDash/actions/workflows/ci.yml)
+
 A personal dashboard for my electricity use. Prices vary a lot by hour, so I want to see what I consume, what it costs, and whether I use power when it is cheap.
 
 - Imports consumption from [Eloverblik](https://eloverblik.dk) and stores it with the spot price for the same hour
