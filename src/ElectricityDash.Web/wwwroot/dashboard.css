@@ -1,0 +1,222 @@
+/* Dashboard theme. Colours are roles: blue = consumption, orange = price, grey = reference.
+   Palette values come from the validated dataviz default (light and dark each pass the checks). */
+:root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --ink-muted: #6f6d67;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --hover: rgba(11, 11, 11, 0.05);
+    --usage: #2a78d6;
+    --peak: #c3c2b7;
+    --price: #eb6834;
+    --market: #898781;
+    --good-text: #006300;
+    --bad-text: #a8321f;
+    --shadow: 0 1px 2px rgba(11, 11, 11, 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        color-scheme: dark;
+        --page: #0d0d0d;
+        --surface: #1a1a19;
+        --ink: #f0efec;
+        --ink-2: #c3c2b7;
+        --ink-muted: #a3a199;
+        --grid: #2c2c2a;
+        --baseline: #383835;
+        --border: rgba(255, 255, 255, 0.10);
+        --hover: rgba(255, 255, 255, 0.06);
+        --usage: #3987e5;
+        --peak: #4a4a46;
+        --price: #d95926;
+        --market: #898781;
+        --good-text: #0ca30c;
+        --bad-text: #ec835a;
+        --shadow: none;
+    }
+}
+
+html, body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--ink);
+}
+
+.dash {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 1.75rem 1.25rem 3rem;
+}
+
+.dash h1 { font-size: 1.75rem; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+.dash h2 { font-size: 0.95rem; font-weight: 600; margin: 0; color: var(--ink); }
+.subtle { color: var(--ink-2); font-size: 0.875rem; margin: 0.25rem 0 0; }
+.range { margin: 0 0 1rem; }
+
+.dash-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.period { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem; color: var(--ink-2); }
+.period select {
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.45rem 2rem 0.45rem 0.75rem;
+    min-width: 11rem;
+    cursor: pointer;
+}
+.period select:focus-visible { outline: 2px solid var(--usage); outline-offset: 2px; }
+
+.card {
+    background: var(--surface);
+    color: var(--ink); /* Bootstrap's .card sets its own text colour, which is dark in dark mode */
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 1.1rem 1.25rem 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.empty-state { text-align: center; padding: 3rem 1.25rem; }
+
+/* KPI row */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+.kpis .card { margin-bottom: 0; }
+.kpi h2 { color: var(--ink-2); font-weight: 500; font-size: 0.85rem; }
+.kpi-value { font-size: 2.4rem; font-weight: 650; letter-spacing: -0.02em; line-height: 1.15; margin-top: 0.35rem; }
+.kpi-value small { font-size: 0.95rem; font-weight: 500; color: var(--ink-2); margin-left: 0.35rem; letter-spacing: 0; }
+.delta { font-weight: 600; white-space: nowrap; margin-left: 0.25rem; }
+.delta.good { color: var(--good-text); }
+.delta.bad { color: var(--bad-text); }
+
+.meter { position: relative; height: 8px; background: var(--grid); border-radius: 4px; margin: 0.5rem 0 0.25rem; }
+.meter-fill { height: 100%; background: var(--usage); border-radius: 4px; }
+.meter-tick { position: absolute; top: -3px; width: 2px; height: 14px; background: var(--ink-2); border-radius: 1px; }
+
+/* Legend + swatches */
+.legend { display: flex; gap: 1rem; list-style: none; margin: 0; padding: 0; font-size: 0.8rem; color: var(--ink-2); flex-wrap: wrap; }
+.legend li { display: flex; align-items: center; gap: 0.4rem; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.swatch.offpeak, .swatch.usage { background: var(--usage); }
+.swatch.peak { background: var(--peak); }
+.swatch.price { background: var(--price); border-radius: 50%; }
+.swatch.market { background: var(--market); border-radius: 50%; }
+.swatch.unscored { background: repeating-linear-gradient(45deg, var(--peak) 0 2px, transparent 2px 4px); }
+
+/* Charts. The plot area is a grid of N equal columns: bars, dots, hit areas and tooltips all live in them,
+   and the SVG lines use the same 0-100 coordinate space, so everything lines up. */
+.chart {
+    --plot-h: 220px;
+    display: grid;
+    grid-template-columns: 2.75rem 1fr;
+    grid-template-rows: var(--plot-h) auto;
+    margin-top: 1rem;
+    font-size: 0.72rem;
+    color: var(--ink-muted);
+}
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1rem; }
+.pair .card { margin-bottom: 0; }
+.pair .chart { --plot-h: 180px; }
+
+.yaxis { position: relative; }
+.yaxis span { position: absolute; right: 0.5rem; transform: translateY(50%); font-variant-numeric: tabular-nums; }
+
+.plot { position: relative; border-bottom: 1px solid var(--baseline); }
+.gridlines i { position: absolute; left: 0; right: 0; height: 1px; background: var(--grid); }
+.gridlines i:first-child { display: none; }
+.gridlines i.zero { background: var(--baseline); }
+
+.lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.line { fill: none; stroke-width: 2px; stroke-linejoin: round; stroke-linecap: round; }
+.line.price { stroke: var(--price); }
+.line.market { stroke: var(--market); }
+.line.dashed { stroke-dasharray: 5 4; }
+
+.cols { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--n), 1fr); }
+.col { position: relative; outline: none; border-radius: 4px 4px 0 0; }
+.col:hover, .col:focus-visible { background: var(--hover); z-index: 2; }
+
+.stack { position: absolute; left: 18%; right: 18%; bottom: 0; top: 0; display: flex; flex-direction: column-reverse; gap: 2px; }
+.seg { border-radius: 0; }
+.seg:last-child { border-radius: 4px 4px 0 0; }
+.seg.offpeak, .seg.usage { background: var(--usage); }
+.seg.peak { background: var(--peak); }
+.seg.unscored { background: repeating-linear-gradient(45deg, var(--peak) 0 2px, transparent 2px 4px); }
+
+.dot {
+    position: absolute; left: 50%; width: 6px; height: 6px; border-radius: 50%;
+    transform: translate(-50%, 50%); box-shadow: 0 0 0 2px var(--surface); pointer-events: none;
+}
+.dot.price { background: var(--price); }
+.dot.market { background: var(--market); }
+.col:hover .dot, .col:focus-visible .dot { width: 10px; height: 10px; }
+.dense .dot { display: none; }
+.dense .col:hover .dot, .dense .col:focus-visible .dot { display: block; }
+
+.xaxis { grid-column: 2; display: grid; grid-template-columns: repeat(var(--n), 1fr); padding-top: 0.4rem; }
+.xaxis span { justify-self: center; white-space: nowrap; }
+
+/* Tooltip */
+.tip {
+    display: none;
+    position: absolute; top: 4px; left: 50%; transform: translateX(8px);
+    min-width: 11.5rem; padding: 0.6rem 0.75rem;
+    background: var(--surface); color: var(--ink);
+    border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+    font-size: 0.8rem; pointer-events: none; z-index: 5;
+}
+.col.tip-left .tip { left: auto; right: 50%; transform: translateX(-8px); }
+.col:hover .tip, .col:focus-visible .tip { display: block; }
+.tip-title { font-weight: 600; margin-bottom: 0.35rem; }
+.tip-row { display: flex; align-items: center; gap: 0.4rem; padding: 0.1rem 0; color: var(--ink-2); }
+.tip-label { flex: 1; }
+.tip-value { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Table + footnote */
+details summary { cursor: pointer; font-size: 0.9rem; font-weight: 600; }
+.table-wrap { overflow-x: auto; margin-top: 0.75rem; }
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--grid); }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--ink-2); font-weight: 600; }
+
+.footnote {
+    font-size: 0.8rem; color: var(--ink-2); margin-top: 1.25rem; padding: 0.75rem 1rem;
+    border: 1px dashed var(--baseline); border-radius: 8px;
+}
+
+/* Blazor's unhandled-error banner: hidden until the framework shows it. */
+#blazor-error-ui {
+    display: none;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000;
+    padding: 0.6rem 1.25rem; background: #fff3cd; color: #3b2f00;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+}
+#blazor-error-ui .dismiss { cursor: pointer; position: absolute; right: 0.75rem; top: 0.5rem; }
+
+@media (max-width: 640px) {
+    .pair { grid-template-columns: 1fr; }
+    .chart { grid-template-columns: 2.25rem 1fr; }
+}
+
+@media (forced-colors: active) {
+    .seg.peak, .swatch.peak { background: GrayText; }
+    .seg.offpeak, .seg.usage { background: Highlight; }
+}
