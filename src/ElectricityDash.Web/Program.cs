@@ -1,6 +1,7 @@
 using Dapper;
 using ElectricityDash.Web.Components;
 using ElectricityDash.Web.Database;
+using ElectricityDash.Web.Eloverblik;
 using ElectricityDash.Web.SpotPrices;
 using Npgsql;
 
@@ -25,6 +26,23 @@ builder.Services.AddHttpClient<EnergyDataServiceClient>(client => client.BaseAdd
     });
 builder.Services.AddScoped<SpotPriceRepository>();
 builder.Services.AddScoped<SpotPriceIngestor>();
+
+var eloverblik = builder.Configuration.GetSection("Eloverblik").Get<EloverblikOptions>() ?? new EloverblikOptions();
+builder.Services.Configure<EloverblikOptions>(builder.Configuration.GetSection("Eloverblik"));
+builder.Services.AddHttpClient<EloverblikClient>(client => client.BaseAddress = eloverblik.Endpoint)
+    .AddStandardResilienceHandler(o =>
+    {
+        o.Retry.Delay = eloverblik.RetryDelay;
+        o.Retry.MaxRetryAttempts = eloverblik.MaxRetries;
+        o.Retry.ShouldRetryAfterHeader = true;
+        o.AttemptTimeout.Timeout = eloverblik.AttemptTimeout;
+        o.CircuitBreaker.SamplingDuration = TimeSpan.FromTicks(Math.Max(o.CircuitBreaker.SamplingDuration.Ticks, eloverblik.AttemptTimeout.Ticks * 2));
+        o.TotalRequestTimeout.Timeout = eloverblik.TotalTimeout;
+    });
+builder.Services.AddScoped<ConsumptionRepository>();
+builder.Services.AddScoped<ChargeRepository>();
+builder.Services.AddScoped<ConsumptionIngestor>();
+builder.Services.AddScoped<ChargeIngestor>();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
@@ -57,6 +75,7 @@ app.MapGet("/api/health", async (NpgsqlDataSource db, CancellationToken ct) =>
 });
 
 app.MapIngestEndpoints();
+app.MapEloverblikIngestEndpoints();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

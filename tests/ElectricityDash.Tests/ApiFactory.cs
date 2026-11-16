@@ -1,4 +1,5 @@
 using DbUp;
+using ElectricityDash.Web.Eloverblik;
 using ElectricityDash.Web.SpotPrices;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -23,6 +24,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
 
     public FakeEnergyDataService EnergyDataService { get; } = new();
 
+    public FakeEloverblik Eloverblik { get; } = new();
+
     public FixedTimeProvider Time { get; } = new(new DateTimeOffset(2025, 10, 1, 10, 0, 0, TimeSpan.Zero));
 
     public ApiFactory()
@@ -40,8 +43,13 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("ConnectionStrings:ElectricityDash", ConnectionString);
         builder.UseSetting("EnergyDataService:RetryDelay", "00:00:00.001"); // keep failure scenarios fast
 
+        builder.UseSetting("Eloverblik:RefreshToken", FakeEloverblik.RefreshToken);
+        builder.UseSetting("Eloverblik:RetryDelay", "00:00:00.001");
+
         builder.ConfigureTestServices(services =>
         {
+            services.AddHttpClient<EloverblikClient>()
+                .ConfigurePrimaryHttpMessageHandler(() => Eloverblik);
             services.AddHttpClient<EnergyDataServiceClient>()
                 .ConfigurePrimaryHttpMessageHandler(() => EnergyDataService);
             services.AddSingleton<TimeProvider>(Time);
