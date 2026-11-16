@@ -1,0 +1,52 @@
+@using System.Globalization
+@{
+    var axis = ChartScale.Nice(0, Columns.Count == 0 ? 0 : Columns.Max(c => c.Total));
+    var max = axis.Max;
+    var ticks = axis.Ticks;
+    var labelEvery = Math.Max(1, (int)Math.Ceiling(Columns.Count / 12.0));
+}
+<div class="chart" style="--n:@Columns.Count" role="img" aria-label="@AriaLabel">
+    <div class="yaxis">
+        @foreach (var t in ticks)
+        {
+            <span style="bottom:@Pct(t / max)">@TickFormat(t)</span>
+        }
+    </div>
+    <div class="plot">
+        <div class="gridlines">
+            @foreach (var t in ticks)
+            {
+                <i style="bottom:@Pct(t / max)"></i>
+            }
+        </div>
+        <div class="cols">
+            @for (var i = 0; i < Columns.Count; i++)
+            {
+                var col = Columns[i];
+                <div class="col @(col.Total <= 0 ? "empty" : "") @(i >= Columns.Count / 2 ? "tip-left" : "")" tabindex="0">
+                    <div class="stack">
+                        @foreach (var seg in col.Segments.Where(s => s.Value > 0))
+                        {
+                            <div class="seg @seg.CssClass" style="height:@Pct(seg.Value / max)"></div>
+                        }
+                    </div>
+                    <Tooltip Title="@col.TipTitle" Rows="col.Tip" />
+                </div>
+            }
+        </div>
+    </div>
+    <div class="xaxis">
+        @for (var i = 0; i < Columns.Count; i++)
+        {
+            <span>@(i % labelEvery == 0 ? Columns[i].AxisLabel : "")</span>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<BarColumn> Columns { get; set; } = [];
+    [Parameter] public Func<double, string> TickFormat { get; set; } = v => v.ToString("0.##", CultureInfo.InvariantCulture);
+    [Parameter] public string AriaLabel { get; set; } = "";
+
+    private static string Pct(double fraction) => (fraction * 100).ToString("0.###", CultureInfo.InvariantCulture) + "%";
+}

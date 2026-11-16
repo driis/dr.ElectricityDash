@@ -46,6 +46,11 @@ ElectricityDash is a personal hobby project (single user, one meter, Denmark). E
     - Tariff `PT1H` has 24 prices by local (Copenhagen) hour of day (position 1 = 00:00), `P1D` is one flat price. Whether Eloverblik prices include VAT is **not yet verified** against an invoice.
     - Eloverblik config: `Eloverblik:RefreshToken` (secret), optional `Eloverblik:MeteringPointId`.
   - The ingest endpoint has no authentication yet. Fine for local use, must be fixed before exposing it.
+- **Dashboard: done (first version).** Home page `/` (`Components/Pages/Home.razor`, interactive server) with a period dropdown (last 7/14/30/90 days, this month, previous month; default 30). Same data as JSON at `GET /api/dashboard?period=<key>`. Code in `Dashboard/`: `DashboardCalculator` (pure: off-peak score, kWh-weighted price paid vs plain market average, hour-of-day profile), `DashboardService` (two SQL queries, filters on the configured price area), `Periods`.
+  - **Prices are spot only** (ex VAT, no tariffs, tax, margin or subscription). The page and `DashboardData.PriceScope` say so. Adding tariffs is the natural next step.
+  - A day is only scored when it has prices for every hour of that Danish day (23/24/25), otherwise its kWh shows as "no price yet" and is left out of the score.
+  - Market average covers only days that have consumption, so paid vs market compares like with like.
+  - Charts are hand-built HTML/SVG (`Components/Dashboard/BarChart.razor`, `LineChart.razor`, CSS-only hover tooltips), styled in `wwwroot/dashboard.css` with light and dark themes. Colour roles: blue = consumption, orange = price, grey = reference. Line axes include negative spot prices.
 - **Deployment:** undecided, likely a price-aware serverless cloud (e.g. Cloud Run). Keep the app stateless, containerizable, configured by environment variables, fast to start. No in-process background schedulers.
 - **Local dev:** dependencies run in Docker, the app runs on the host (`dotnet run` / IDE) so debugging is easy. The app is not containerized for local use.
 

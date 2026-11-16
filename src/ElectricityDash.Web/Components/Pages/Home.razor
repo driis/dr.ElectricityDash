@@ -1,7 +1,245 @@
 ﻿@page "/"
+@rendermode InteractiveServer
+@using System.Globalization
+@using ElectricityDash.Web.Components.Dashboard
+@using ElectricityDash.Web.Dashboard
+@inject DashboardService Dashboard
 
-<PageTitle>Home</PageTitle>
+<PageTitle>ElectricityDash</PageTitle>
 
-<h1>Hello, world!</h1>
+<header class="dash-header">
+    <div>
+        <h1>Electricity</h1>
+        <p class="subtle">Are we using power in the cheapest hours?</p>
+    </div>
+    <label class="period">
+        <span>Period</span>
+        <select @bind="PeriodKey" @bind:after="LoadAsync" aria-label="Period">
+            @foreach (var (key, label) in Periods.Options)
+            {
+                <option value="@key">@label</option>
+            }
+        </select>
+    </label>
+</header>
 
-Welcome to your new app.
+@if (_data is null)
+{
+    <p class="subtle">Loading…</p>
+}
+else
+{
+    var t = _data.Totals;
+    <p class="range subtle">@Day(_data.Period.From, true) – @Day(_data.Period.To, true) · @t.DaysWithData of @_data.Period.DayCount days with consumption</p>
+
+    @if (t.DaysWithData == 0)
+    {
+        <section class="card empty-state">
+            <h2>No consumption in this period yet</h2>
+            <p class="subtle">Eloverblik delivers data a day or more late. Pick a longer period, or run <code>POST /api/ingest/consumption</code> and <code>POST /api/ingest/spot-prices</code>.</p>
+        </section>
+    }
+    else
+    {
+        <section class="kpis">
+            <article class="card kpi">
+                <h2>Consumption</h2>
+                <div class="kpi-value">@Kwh(t.Kwh)<small>kWh</small></div>
+                <p class="subtle">@Kwh(t.Kwh / t.DaysWithData) kWh per day on average</p>
+            </article>
+
+            <article class="card kpi">
+                <h2>Average price you paid</h2>
+                <div class="kpi-value">@Price(t.PaidDkkPerKwh)<small>kr/kWh</small></div>
+                <p class="subtle">
+                    Market average @Price(t.MarketDkkPerKwh) kr/kWh
+                    @if (t.PaidVersusMarket is { } delta)
+                    {
+                        <span class="delta @(delta <= 0 ? "good" : "bad")">@(delta <= 0 ? "▼" : "▲") @Math.Abs(delta).ToString("0%", CultureInfo.InvariantCulture) @(delta <= 0 ? "below" : "above") market</span>
+                    }
+                </p>
+            </article>
+
+            <article class="card kpi">
+                <h2>Off-peak score</h2>
+                <div class="kpi-value">@Score(t.Score)</div>
+                <div class="meter" role="img" aria-label="Off-peak score @Score(t.Score), flat usage would score 25%">
+                    <div class="meter-fill" style="width:@Percent(t.Score)"></div>
+                    <div class="meter-tick" style="left:25%" title="Flat usage would score 25%"></div>
+                </div>
+                <p class="subtle">kWh used in the 6 cheapest hours of each day. Flat usage scores 25%.</p>
+            </article>
+        </section>
+
+        <section class="card">
+            <div class="card-head">
+                <h2>Daily consumption</h2>
+                <ul class="legend">
+                    <li><i class="swatch offpeak"></i>Cheapest 6 hours</li>
+                    <li><i class="swatch peak"></i>Other hours</li>
+                    @if (_data.Days.Any(d => d.UnscoredKwh > 0))
+                    {
+                        <li><i class="swatch unscored"></i>No price yet</li>
+                    }
+                </ul>
+            </div>
+            <p class="subtle">The more of each bar that is blue, the better.</p>
+            <BarChart Columns="_dayBars" TickFormat="Fmt1" AriaLabel="Daily consumption in kWh, split into the 6 cheapest hours and other hours" />
+        </section>
+
+        <section class="card">
+            <div class="card-head">
+                <h2>Daily price</h2>
+                <ul class="legend">
+                    <li><i class="swatch price"></i>Price you paid</li>
+                    <li><i class="swatch market dashed"></i>Market average</li>
+                </ul>
+            </div>
+            <p class="subtle">Spot price in kr/kWh. Staying under the dashed line means shifting use to cheaper hours.</p>
+            <LineChart AxisLabels="_dayLabels" TipTitles="_dayTitles" Series="_priceSeries"
+                       TickFormat="FmtPrice"
+                       ValueFormat="FmtPriceTip"
+                       AriaLabel="Daily spot price you paid compared with the market average, kr per kWh" />
+        </section>
+
+        <div class="pair">
+            <section class="card">
+                <div class="card-head">
+                    <h2>Usage by hour of day</h2>
+                    <ul class="legend"><li><i class="swatch usage"></i>Average kWh</li></ul>
+                </div>
+                <p class="subtle">When the power goes. Compare with the price below.</p>
+                <BarChart Columns="_hourBars" TickFormat="Fmt2" AriaLabel="Average consumption per hour of day in kWh" />
+            </section>
+
+            <section class="card">
+                <div class="card-head">
+                    <h2>Price by hour of day</h2>
+                    <ul class="legend"><li><i class="swatch price"></i>Average spot price</li></ul>
+                </div>
+                <p class="subtle">Hours where the price dips are the ones to aim for.</p>
+                <LineChart AxisLabels="_hourLabels" TipTitles="_hourTitles" Series="_hourPriceSeries"
+                           TickFormat="FmtPrice"
+                           ValueFormat="FmtPriceTip"
+                           AriaLabel="Average spot price per hour of day, kr per kWh" />
+            </section>
+        </div>
+
+        <section class="card">
+            <details>
+                <summary>Show daily numbers as a table</summary>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Day</th><th>kWh</th><th>Cheapest 6 h</th><th>Score</th><th>Paid kr/kWh</th><th>Market kr/kWh</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var d in _data.Days.Reverse())
+                            {
+                                <tr>
+                                    <td>@Day(d.Date, false)</td>
+                                    <td>@(d.HasData ? Kwh(d.Kwh) : "–")</td>
+                                    <td>@(d.HasData ? Kwh(d.OffPeakKwh) : "–")</td>
+                                    <td>@Score(d.Score)</td>
+                                    <td>@Price(d.PaidDkkPerKwh)</td>
+                                    <td>@Price(d.MarketDkkPerKwh)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        </section>
+    }
+
+    <p class="footnote"><strong>Not a full bill.</strong> @_data.PriceScope</p>
+}
+
+@code {
+    private DashboardData? _data;
+    private IReadOnlyList<BarColumn> _dayBars = [];
+    private IReadOnlyList<BarColumn> _hourBars = [];
+    private IReadOnlyList<string> _dayLabels = [];
+    private IReadOnlyList<string> _dayTitles = [];
+    private IReadOnlyList<LineSeries> _priceSeries = [];
+    private IReadOnlyList<string> _hourLabels = [];
+    private IReadOnlyList<string> _hourTitles = [];
+    private IReadOnlyList<LineSeries> _hourPriceSeries = [];
+
+    private static readonly Func<double, string> Fmt1 = v => v.ToString("0.#", CultureInfo.InvariantCulture);
+    private static readonly Func<double, string> Fmt2 = v => v.ToString("0.##", CultureInfo.InvariantCulture);
+    private static readonly Func<double, string> FmtPrice = v => v.ToString("0.00", CultureInfo.InvariantCulture);
+    private static readonly Func<double, string> FmtPriceTip = v => v.ToString("0.000", CultureInfo.InvariantCulture) + " kr/kWh";
+
+    private string PeriodKey { get; set; } = Periods.DefaultKey;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _data = await Dashboard.GetAsync(PeriodKey);
+        BuildCharts(_data);
+    }
+
+    private void BuildCharts(DashboardData data)
+    {
+        _dayLabels = data.Days.Select(d => Day(d.Date, false)).ToList();
+        _dayTitles = data.Days.Select(d => d.Date.ToString("dddd d MMM", CultureInfo.InvariantCulture)).ToList();
+
+        _dayBars = data.Days.Select(d => new BarColumn(
+            Day(d.Date, false),
+            d.Date.ToString("dddd d MMM", CultureInfo.InvariantCulture),
+            [
+                new BarSegment((double)d.OffPeakKwh, "offpeak"),
+                new BarSegment((double)d.PeakKwh, "peak"),
+                new BarSegment((double)d.UnscoredKwh, "unscored"),
+            ],
+            d.HasData
+                ?
+                [
+                    new TipRow("Total", Kwh(d.Kwh) + " kWh"),
+                    new TipRow("Cheapest 6 hours", Kwh(d.OffPeakKwh) + " kWh", "offpeak"),
+                    new TipRow("Score", Score(d.Score)),
+                    new TipRow("Price you paid", Price(d.PaidDkkPerKwh) + " kr/kWh"),
+                ]
+                : [new TipRow("Consumption", "no data yet")])).ToList();
+
+        _priceSeries =
+        [
+            new LineSeries("Price you paid", "price", data.Days.Select(d => (double?)d.PaidDkkPerKwh).ToList()),
+            new LineSeries("Market average", "market", data.Days.Select(d => (double?)d.MarketDkkPerKwh).ToList(), Dashed: true),
+        ];
+
+        _hourLabels = data.Hours.Select(h => h.Hour.ToString("00")).ToList();
+        _hourTitles = data.Hours.Select(h => $"{h.Hour:00}:00–{(h.Hour + 1) % 24:00}:00").ToList();
+
+        _hourBars = data.Hours.Select(h => new BarColumn(
+            h.Hour.ToString("00"),
+            $"{h.Hour:00}:00–{(h.Hour + 1) % 24:00}:00",
+            [new BarSegment((double)(h.AvgKwh ?? 0), "usage")],
+            [
+                new TipRow("Average use", Kwh(h.AvgKwh, 3) + " kWh", "usage"),
+                new TipRow("Among cheapest 6 hours", h.CheapShare is { } c ? c.ToString("0%", CultureInfo.InvariantCulture) + " of days" : "–"),
+            ])).ToList();
+
+        _hourPriceSeries =
+        [
+            new LineSeries("Average price", "price", data.Hours.Select(h => (double?)h.AvgDkkPerKwh).ToList()),
+        ];
+    }
+
+    private static string Kwh(decimal? value, int decimals = 1) =>
+        value is { } v ? v.ToString("N" + decimals, CultureInfo.InvariantCulture) : "–";
+
+    private static string Price(decimal? value) =>
+        value is { } v ? v.ToString("0.00", CultureInfo.InvariantCulture) : "–";
+
+    private static string Score(decimal? value) =>
+        value is { } v ? v.ToString("0%", CultureInfo.InvariantCulture) : "–";
+
+    private static string Percent(decimal? value) =>
+        ((double)(value ?? 0) * 100).ToString("0.#", CultureInfo.InvariantCulture) + "%";
+
+    private static string Day(DateOnly date, bool withYear) =>
+        date.ToString(withYear ? "d MMM yyyy" : "d MMM", CultureInfo.InvariantCulture);
+}

@@ -1,5 +1,6 @@
 using Dapper;
 using ElectricityDash.Web.Components;
+using ElectricityDash.Web.Dashboard;
 using ElectricityDash.Web.Database;
 using ElectricityDash.Web.Eloverblik;
 using ElectricityDash.Web.SpotPrices;
@@ -43,6 +44,7 @@ builder.Services.AddScoped<ConsumptionRepository>();
 builder.Services.AddScoped<ChargeRepository>();
 builder.Services.AddScoped<ConsumptionIngestor>();
 builder.Services.AddScoped<ChargeIngestor>();
+builder.Services.AddScoped<DashboardService>();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
@@ -76,6 +78,7 @@ app.MapGet("/api/health", async (NpgsqlDataSource db, CancellationToken ct) =>
 
 app.MapIngestEndpoints();
 app.MapEloverblikIngestEndpoints();
+app.MapDashboardEndpoints();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

@@ -1,0 +1,19 @@
+<div class="tip" role="tooltip">
+    <div class="tip-title">@Title</div>
+    @foreach (var row in Rows)
+    {
+        <div class="tip-row">
+            @if (row.SwatchClass is not null)
+            {
+                <i class="swatch @row.SwatchClass"></i>
+            }
+            <span class="tip-label">@row.Label</span>
+            <span class="tip-value">@row.Value</span>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public IReadOnlyList<TipRow> Rows { get; set; } = [];
+}

@@ -1,0 +1,82 @@
+@using System.Globalization
+@using System.Text
+@{
+    var n = AxisLabels.Count;
+    var values = Series.SelectMany(s => s.Values).Where(v => v.HasValue).Select(v => v!.Value).DefaultIfEmpty(0).ToList();
+    var axis = ChartScale.Nice(values.Min(), values.Max());
+    var ticks = axis.Ticks;
+    var labelEvery = Math.Max(1, (int)Math.Ceiling(n / 12.0));
+    var dense = n > 31;
+}
+<div class="chart line-chart @(dense ? "dense" : "")" style="--n:@n" role="img" aria-label="@AriaLabel">
+    <div class="yaxis">
+        @foreach (var t in ticks)
+        {
+            <span style="bottom:@Pct(axis.Fraction(t))">@TickFormat(t)</span>
+        }
+    </div>
+    <div class="plot">
+        <div class="gridlines">
+            @foreach (var t in ticks)
+            {
+                <i class="@(t == 0 && axis.Min < 0 ? "zero" : "")" style="bottom:@Pct(axis.Fraction(t))"></i>
+            }
+        </div>
+        <svg class="lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            @foreach (var s in Series)
+            {
+                <path class="line @s.CssClass @(s.Dashed ? "dashed" : "")" d="@PathFor(s, n, axis)" vector-effect="non-scaling-stroke" />
+            }
+        </svg>
+        <div class="cols">
+            @for (var i = 0; i < n; i++)
+            {
+                var index = i;
+                <div class="col @(i >= n / 2 ? "tip-left" : "")" tabindex="0">
+                    @foreach (var s in Series.Where(s => s.Values[index].HasValue))
+                    {
+                        <i class="dot @s.CssClass" style="bottom:@Pct(axis.Fraction(s.Values[index]!.Value))"></i>
+                    }
+                    <Tooltip Title="@TipTitles[index]" Rows="TipRowsFor(index)" />
+                </div>
+            }
+        </div>
+    </div>
+    <div class="xaxis">
+        @for (var i = 0; i < n; i++)
+        {
+            <span>@(i % labelEvery == 0 ? AxisLabels[i] : "")</span>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<string> AxisLabels { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<string> TipTitles { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<LineSeries> Series { get; set; } = [];
+    [Parameter] public Func<double, string> TickFormat { get; set; } = v => v.ToString("0.##", CultureInfo.InvariantCulture);
+    [Parameter] public Func<double, string> ValueFormat { get; set; } = v => v.ToString("0.##", CultureInfo.InvariantCulture);
+    [Parameter] public string AriaLabel { get; set; } = "";
+
+    private IReadOnlyList<TipRow> TipRowsFor(int index) =>
+        Series.Select(s => new TipRow(s.Name, s.Values[index] is { } v ? ValueFormat(v) : "no data", s.CssClass)).ToList();
+
+    private static string Pct(double fraction) => (fraction * 100).ToString("0.###", CultureInfo.InvariantCulture) + "%";
+
+    // x is the centre of each equal-width column, y grows downwards in the 0-100 viewBox. Gaps (null) break the path.
+    private static string PathFor(LineSeries s, int n, AxisScale axis)
+    {
+        var path = new StringBuilder();
+        var penDown = false;
+        for (var i = 0; i < n; i++)
+        {
+            if (s.Values[i] is not { } v) { penDown = false; continue; }
+            var x = (i + 0.5) / n * 100;
+            var y = 100 - axis.Fraction(v) * 100;
+            path.Append(penDown ? 'L' : 'M').Append(x.ToString("0.###", CultureInfo.InvariantCulture)).Append(' ')
+                .Append(y.ToString("0.###", CultureInfo.InvariantCulture)).Append(' ');
+            penDown = true;
+        }
+        return path.ToString();
+    }
+}
